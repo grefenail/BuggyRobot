@@ -23,7 +23,7 @@ import argparse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "pipeline"))
 
 import cv2
 import config
@@ -139,7 +139,7 @@ def run_pipeline(frame_bgr):
 
 def save_config():
     """Write current IPM/ROI values back into config.py."""
-    cfg_path = ROOT / "config.py"
+    cfg_path = ROOT / "pipeline" / "config.py"
     text = cfg_path.read_text()
     replacements = {
         "LINE_BOTTOM_FRAC":                config.LINE_BOTTOM_FRAC,

@@ -71,25 +71,32 @@ filename is given.
 
 ## Configuration
 
-All tunable parameters live in `config.py` — perspective calibration,
+All tunable parameters live in `pipeline/config.py` — perspective calibration,
 ROI margins, Hough thresholds, and the fit/smoothing behavior. See the
 comments next to each value for what it controls and why it's set the
 way it is.
 
 ## Project structure
 
+Entry-point scripts (what you actually run) live at the top level;
+the pipeline's internals are grouped under `pipeline/`.
+
 ```
-config.py         tunable parameters for every step
-ipm.py            perspective warp (camera <-> bird's-eye)
-step1_mask.py      HSV white-paint mask
-step2_canny.py     Canny edge detection
-step3_roi.py       bird's-eye region-of-interest mask
-step4_hough.py     Hough line detection + left/right classification
-step5_fit.py       curve fitting, smoothing, stale-lock recovery
-step6_draw.py      lane fill + overlay drawing
-roi_search.py      ties the ROI + Hough steps together
-run.py             live video player with debug overlay
-run_steps.py       step-by-step viewer with tuning trackbars
-export_video.py    batch-process a video to a file
-vids/              sample input videos + the example output clip
+run.py                 live video player with debug overlay
+run_steps.py           step-by-step viewer with tuning trackbars
+export_video.py        batch-process a video to a file
+
+pipeline/
+    config.py          tunable parameters for every step
+    ipm.py              perspective warp (camera <-> bird's-eye)
+    step1_mask.py        HSV white-paint mask
+    step2_canny.py       Canny edge detection
+    step3_roi.py         bird's-eye region-of-interest mask
+    step4_hough.py       Hough line detection + left/right classification
+    step5_fit.py         curve fitting, smoothing, stale-lock recovery
+    step6_draw.py        lane fill + overlay drawing
+    roi_search.py        ties the ROI + Hough steps together
+    detect_lanes.py      orchestrates all the steps above into one pipeline
+
+vids/                  sample input videos + the example output clip
 ```
