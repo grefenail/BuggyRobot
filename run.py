@@ -13,8 +13,8 @@ import argparse
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "buggyvis1"))
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
 
 import cv2
 from detect_lanes import detect_lanes, detect_lanes_debug

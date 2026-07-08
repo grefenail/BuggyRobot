@@ -22,8 +22,8 @@ import sys
 import argparse
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "buggyvis1"))
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
 
 import cv2
 import config
@@ -139,7 +139,7 @@ def run_pipeline(frame_bgr):
 
 def save_config():
     """Write current IPM/ROI values back into config.py."""
-    cfg_path = ROOT / "buggyvis1" / "config.py"
+    cfg_path = ROOT / "config.py"
     text = cfg_path.read_text()
     replacements = {
         "LINE_BOTTOM_FRAC":                config.LINE_BOTTOM_FRAC,
