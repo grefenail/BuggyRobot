@@ -30,10 +30,13 @@ The pipeline runs in six steps, all defined in their own module:
 
 ## Example output
 
-[`vids/IMG_6741_preview.mp4`](vids/IMG_6741_preview.mp4) — a 10-second
-clip (first 300 frames) of `IMG_6741.MP4` run through the full
-pipeline. The green fill tracks the current lane as the track curves,
-with the yellow border marking the two detected boundary lines.
+![Lane detection tracking the track boundary through a curve](vids/IMG_6741_preview.gif)
+
+The green fill tracks the current lane as the track curves, with the
+yellow border marking the two detected boundary lines. This GIF is a
+downsampled preview — the full-quality clip is at
+[`vids/IMG_6741_preview.mp4`](vids/IMG_6741_preview.mp4) (first 300
+frames / ~10s of `IMG_6741.MP4`, full resolution and frame rate).
 
 ## Requirements
 
