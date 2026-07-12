@@ -91,7 +91,8 @@ def _format_waypoints(coords):
 
 def play(video_path, print_waypoints=False, print_every=1,
          camera_height_m=config.APPROX_CAMERA_HEIGHT_M,
-         camera_pitch_deg=config.APPROX_CAMERA_PITCH_DEG):
+         camera_pitch_deg=config.APPROX_CAMERA_PITCH_DEG,
+         ros_publisher=None, ros_every=1):
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open: {video_path}")
@@ -115,7 +116,11 @@ def play(video_path, print_waypoints=False, print_every=1,
     if print_waypoints:
         print(f"  Printing center waypoints every {print_every} frame(s)")
         print("  Dots on the image are numbered to match terminal point indexes")
+    if ros_publisher is not None:
+        print(f"  Publishing center waypoints to ROS 2 every {ros_every} frame(s)")
     print()
+
+    need_coords = print_waypoints or ros_publisher is not None
 
     while True:
         if not paused:
@@ -125,7 +130,7 @@ def play(video_path, print_waypoints=False, print_every=1,
                 idx = 0
                 continue
             coords = None
-            if print_waypoints and not debug:
+            if need_coords and not debug:
                 last_frame, coords = detect_lanes_with_coords(frame)
             elif debug:
                 last_frame, *last_steps = detect_lanes_debug(frame)
@@ -133,14 +138,17 @@ def play(video_path, print_waypoints=False, print_every=1,
                 last_frame = detect_lanes(frame)
             idx += 1
 
-            if print_waypoints and coords is not None and idx % print_every == 0:
+            if coords is not None:
                 coords = add_approx_ground_waypoints(
                     coords,
                     camera_height_m=camera_height_m,
                     pitch_deg=camera_pitch_deg,
                 )
-                ts_ms = round((idx - 1) / fps * 1000.0, 1)
-                print(f"frame={idx - 1} time_ms={ts_ms} {_format_waypoints(coords)}")
+                if print_waypoints and idx % print_every == 0:
+                    ts_ms = round((idx - 1) / fps * 1000.0, 1)
+                    print(f"frame={idx - 1} time_ms={ts_ms} {_format_waypoints(coords)}")
+                if ros_publisher is not None and idx % ros_every == 0:
+                    ros_publisher.publish(coords)
 
         if last_frame is not None:
             display = draw_hud(last_frame.copy(), paused, video_path.name,
@@ -237,20 +245,42 @@ def main():
     parser.add_argument("--camera-pitch-deg", type=float,
                         default=config.APPROX_CAMERA_PITCH_DEG,
                         help="Approximate camera downward pitch for printed meter waypoints")
+    parser.add_argument("--publish-ros", action="store_true",
+                        help="Publish center waypoints as a nav_msgs/Path over ROS 2 (requires rclpy)")
+    parser.add_argument("--ros-topic", default=config.ROS_DEFAULT_TOPIC,
+                        help=f"ROS 2 topic to publish on. Default: {config.ROS_DEFAULT_TOPIC}")
+    parser.add_argument("--ros-frame-id", default=config.ROS_DEFAULT_FRAME_ID,
+                        help=f"frame_id for published poses. Default: {config.ROS_DEFAULT_FRAME_ID}")
+    parser.add_argument("--ros-every", type=int, default=1,
+                        help="Publish every Nth frame when --publish-ros is set")
     args = parser.parse_args()
     if args.print_every < 1:
         raise ValueError("--print-every must be >= 1")
+    if args.ros_every < 1:
+        raise ValueError("--ros-every must be >= 1")
     video_path = resolve_video(args.video)
     if args.export:
         export_video(video_path, Path(args.export))
-    else:
+        return
+
+    ros_publisher = None
+    if args.publish_ros:
+        from ros_publish import WaypointPublisher
+        ros_publisher = WaypointPublisher(topic=args.ros_topic, frame_id=args.ros_frame_id)
+
+    try:
         play(
             video_path,
             print_waypoints=args.print_waypoints,
             print_every=args.print_every,
             camera_height_m=args.camera_height_m,
             camera_pitch_deg=args.camera_pitch_deg,
+            ros_publisher=ros_publisher,
+            ros_every=args.ros_every,
         )
+    finally:
+        if ros_publisher is not None:
+            ros_publisher.close()
 
 
 if __name__ == "__main__":

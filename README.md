@@ -110,6 +110,19 @@ extrinsics; replace them with real calibration before final testing.
 All scripts fall back to the first video found in `vids/` if no
 filename is given.
 
+**Publish waypoints to ROS 2** while playing (requires `rclpy` — install
+via a sourced ROS 2 distro, not pip):
+```
+python run.py IMG_6743.MP4 --publish-ros
+python run.py IMG_6743.MP4 --publish-ros --ros-topic /lane_waypoints --ros-frame-id base_link
+```
+Publishes a `nav_msgs/Path` each processed frame, with each pose's
+`x`/`y` set from the same `x_forward_m`/`y_left_m` ground waypoints
+described above (`z` and orientation left at identity). `rclpy` is
+only imported when `--publish-ros` is passed, so the rest of the
+pipeline runs fine without ROS 2 installed. See
+[`pipeline/ros_publish.py`](pipeline/ros_publish.py).
+
 ## Configuration
 
 All tunable parameters live in `pipeline/config.py` — perspective calibration,

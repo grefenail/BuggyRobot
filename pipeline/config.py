@@ -139,6 +139,12 @@ APPROX_CAMERA_FY_PX = 880.0
 APPROX_CAMERA_HEIGHT_M = 1.0
 APPROX_CAMERA_PITCH_DEG = 15.0     # downward pitch from horizontal
 
+# ROS 2 publishing (optional -- see pipeline/ros_publish.py). Only used
+# when run.py is started with --publish-ros; rclpy is not a hard
+# dependency of the rest of the pipeline.
+ROS_DEFAULT_TOPIC    = "/lane_waypoints"
+ROS_DEFAULT_FRAME_ID = "base_link"
+
 # Debug visualisation colours
 LEFT_COLOR  = (0, 0, 255)
 RIGHT_COLOR = (255, 0, 0)
