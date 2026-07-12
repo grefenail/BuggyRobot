@@ -40,29 +40,26 @@ frames / ~10s of `IMG_6741.MP4`, full resolution and frame rate).
 
 ## Coordinate output
 
-The same detection can be exported as bird's-eye lane coordinates for
-navigation or ROS-style waypoint testing. Each frame contains the left
-boundary, right boundary, and centerline coordinates in bird's-eye pixels.
+The orange numbered spots mark sampled centerline waypoints. The table
+below lists the matching coordinates for the spots shown on the line.
 
-Example from [`vids/IMG_6743_birdeye_coords_center_sample.json`](vids/IMG_6743_birdeye_coords_center_sample.json):
+![Numbered centerline coordinate spots](vids/IMG_6743_waypoint_dots_check.png)
 
-| Frame | Time | Left boundary | Right boundary | Centerline |
-| --- | ---: | --- | --- | --- |
-| `0` | `0.0 ms` | `[[223, 1216], [200, 64]]` | `[[541, 1216], [400, 64]]` | `[[382, 1216], [300, 64]]` |
-| `600` | `20000.0 ms` | `[[214, 1216], [197, 64]]` | `[[535, 1216], [418, 64]]` | `[[374, 1216], [308, 64]]` |
+Example from [`vids/IMG_6743_waypoints_terminal_test.json`](vids/IMG_6743_waypoints_terminal_test.json),
+frame `0`, timestamp `0.0 ms`:
 
-```json
-{
-  "coordinate_space": "birdseye_pixels",
-  "bird_width": 720,
-  "bird_height": 1280,
-  "frame_index": 0,
-  "timestamp_ms": 0.0,
-  "left_curve": [[223, 1216], [200, 64]],
-  "right_curve": [[541, 1216], [400, 64]],
-  "center_curve": [[382, 1216], [300, 64]]
-}
-```
+| Spot | Bird's-eye pixel | Vehicle pixel | Approx robot meters |
+| ---: | --- | --- | --- |
+| `0` | `[382, 1216]` | `[395.2, 998.4]` | `x=1.32 m, y=-0.06 m` |
+| `1` | `[373, 1088]` | `[379.5, 928.0]` | `x=1.53 m, y=-0.04 m` |
+| `2` | `[364, 960]` | `[365.65, 865.88]` | `x=1.78 m, y=-0.01 m` |
+| `3` | `[355, 832]` | `[353.33, 810.67]` | `x=2.05 m, y=0.02 m` |
+| `4` | `[346, 704]` | `[342.32, 761.26]` | `x=2.37 m, y=0.05 m` |
+| `5` | `[336, 576]` | `[331.2, 716.8]` | `x=2.75 m, y=0.10 m` |
+| `6` | `[327, 448]` | `[322.29, 676.57]` | `x=3.20 m, y=0.14 m` |
+| `7` | `[318, 320]` | `[314.18, 640.0]` | `x=3.73 m, y=0.20 m` |
+| `8` | `[309, 192]` | `[306.78, 606.61]` | `x=4.39 m, y=0.27 m` |
+| `9` | `[300, 64]` | `[300.0, 576.0]` | `x=5.22 m, y=0.36 m` |
 
 ## Requirements
 
