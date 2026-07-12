@@ -38,6 +38,32 @@ downsampled preview — the full-quality clip is at
 [`vids/IMG_6741_preview.mp4`](vids/IMG_6741_preview.mp4) (first 300
 frames / ~10s of `IMG_6741.MP4`, full resolution and frame rate).
 
+## Coordinate output
+
+The same detection can be exported as bird's-eye lane coordinates for
+navigation or ROS-style waypoint testing. Each frame contains the left
+boundary, right boundary, and centerline coordinates in bird's-eye pixels.
+
+Example from [`vids/IMG_6743_birdeye_coords_center_sample.json`](vids/IMG_6743_birdeye_coords_center_sample.json):
+
+| Frame | Time | Left boundary | Right boundary | Centerline |
+| --- | ---: | --- | --- | --- |
+| `0` | `0.0 ms` | `[[223, 1216], [200, 64]]` | `[[541, 1216], [400, 64]]` | `[[382, 1216], [300, 64]]` |
+| `600` | `20000.0 ms` | `[[214, 1216], [197, 64]]` | `[[535, 1216], [418, 64]]` | `[[374, 1216], [308, 64]]` |
+
+```json
+{
+  "coordinate_space": "birdseye_pixels",
+  "bird_width": 720,
+  "bird_height": 1280,
+  "frame_index": 0,
+  "timestamp_ms": 0.0,
+  "left_curve": [[223, 1216], [200, 64]],
+  "right_curve": [[541, 1216], [400, 64]],
+  "center_curve": [[382, 1216], [300, 64]]
+}
+```
+
 ## Requirements
 
 ```
