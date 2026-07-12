@@ -12,11 +12,11 @@ in bird's-eye coordinates (see config.py / ipm.py).
 """
 
 import cv2
-from config import ROTATE_CW, LANE_FILL_ALPHA
+from config import ROTATE_CW, LANE_FILL_ALPHA, CENTER_WAYPOINT_COUNT
 from step1_mask  import apply_white_mask
 from step2_canny import apply_canny
 from step5_fit   import update_fit
-from step6_draw  import lane_overlay, fill_lane
+from step6_draw  import lane_overlay, fill_lane, center_curve
 from roi_search  import detect_with_stable_roi
 from ipm         import warp_to_birdseye, warp_to_vehicle, draw_destination_overlay
 
@@ -48,6 +48,52 @@ def detect_lanes(frame_bgr):
     _, _, _, _, _, _, _, lc, rc = _run_detection(bird_frame)
     overlay = warp_to_vehicle(lane_overlay(bird_frame.shape, lc, rc))
     return _blend_overlay(frame_bgr, overlay)
+
+
+def _coords_from_detection(bird_frame, min_y, max_y, lc, rc):
+    center = center_curve(lc, rc) if lc is not None and rc is not None else None
+    center_waypoints = center_curve(lc, rc, CENTER_WAYPOINT_COUNT) \
+        if lc is not None and rc is not None else None
+
+    return {
+        "bird_width": int(bird_frame.shape[1]),
+        "bird_height": int(bird_frame.shape[0]),
+        "min_y": int(min_y),
+        "max_y": int(max_y),
+        "left_curve": [[int(x), int(y)] for x, y in lc] if lc is not None else None,
+        "right_curve": [[int(x), int(y)] for x, y in rc] if rc is not None else None,
+        "center_curve": [[int(x), int(y)] for x, y in center] if center is not None else None,
+        "center_waypoints_px": [[int(x), int(y)] for x, y in center_waypoints]
+                               if center_waypoints is not None else None,
+    }
+
+
+def detect_lanes_with_coords(frame_bgr):
+    if ROTATE_CW:
+        frame_bgr = cv2.rotate(frame_bgr, cv2.ROTATE_90_CLOCKWISE)
+
+    bird_frame = warp_to_birdseye(frame_bgr)
+    _, _, _, _, _, min_y, max_y, lc, rc = _run_detection(bird_frame)
+    overlay = warp_to_vehicle(lane_overlay(bird_frame.shape, lc, rc))
+    return _blend_overlay(frame_bgr, overlay), _coords_from_detection(
+        bird_frame, min_y, max_y, lc, rc
+    )
+
+
+def detect_lanes_birdeye_coords(frame_bgr):
+    """
+    Return the fitted lane-boundary coordinates in bird's-eye pixels.
+
+    The left/right curves are the same polylines used by Step 6 for the
+    green fill and yellow borders, before they are warped back onto the
+    camera view.
+    """
+    if ROTATE_CW:
+        frame_bgr = cv2.rotate(frame_bgr, cv2.ROTATE_90_CLOCKWISE)
+
+    bird_frame = warp_to_birdseye(frame_bgr)
+    _, _, _, _, _, min_y, max_y, lc, rc = _run_detection(bird_frame)
+    return _coords_from_detection(bird_frame, min_y, max_y, lc, rc)
 
 
 def detect_lanes_debug(frame_bgr):

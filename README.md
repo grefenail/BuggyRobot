@@ -54,7 +54,10 @@ same folder to run the pipeline on them.
 windows, `space` pauses, `r` restarts):
 ```
 python run.py IMG_6743.MP4
+python run.py IMG_6743.MP4 --print-waypoints --print-every 10 --camera-height-m 1.0
 ```
+The waypoint print mode draws numbered orange dots on the centerline
+and prints the matching center waypoint pixels/meters in the terminal.
 
 **Step through frame-by-frame** with live trackbars for tuning the
 bird's-eye calibration and ROI margins (`s` saves the current trackbar
@@ -69,7 +72,19 @@ python export_video.py IMG_6743.MP4
 python export_video.py IMG_6743.MP4 --out my_output.mp4
 ```
 
-All three scripts fall back to the first video found in `vids/` if no
+**Export bird's-eye lane coordinates** to JSON:
+```
+python export_birdeye_coords.py IMG_6743.MP4
+python export_birdeye_coords.py IMG_6743.MP4 --out coords.json
+python export_birdeye_coords.py IMG_6743.MP4 --every 10
+python export_birdeye_coords.py IMG_6743.MP4 --camera-height-m 1.0
+```
+The JSON includes sampled `center_waypoints_px` and approximate
+`center_waypoints_m_approx` for ROS-style path testing. The meter
+values use placeholder iPhone 16 intrinsics and estimated mounting
+extrinsics; replace them with real calibration before final testing.
+
+All scripts fall back to the first video found in `vids/` if no
 filename is given.
 
 ## Configuration
@@ -88,6 +103,8 @@ the pipeline's internals are grouped under `pipeline/`.
 run.py                 live video player with debug overlay
 run_steps.py           step-by-step viewer with tuning trackbars
 export_video.py        batch-process a video to a file
+export_birdeye_coords.py
+                       export fitted bird's-eye left/right lane coordinates
 
 pipeline/
     config.py          tunable parameters for every step

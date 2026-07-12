@@ -17,7 +17,9 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "pipeline"))
 
 import cv2
-from detect_lanes import detect_lanes, detect_lanes_debug
+from detect_lanes import detect_lanes, detect_lanes_debug, detect_lanes_with_coords
+from waypoints import add_approx_ground_waypoints
+import config
 
 VIDEO_DIR        = ROOT / "vids"
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv")
@@ -68,7 +70,28 @@ DEBUG_WINDOWS = [
 ]
 
 
-def play(video_path):
+def _format_waypoints(coords):
+    waypoints = coords.get("center_waypoints_m_approx")
+    if not waypoints:
+        return "center waypoints: none"
+
+    parts = []
+    for i, item in enumerate(waypoints):
+        ground = item.get("ground_m")
+        bird_px = item.get("bird_px")
+        if ground is None:
+            parts.append(f"{i}:px={bird_px} m=None")
+        else:
+            parts.append(
+                f"{i}:px={bird_px} x={ground['x_forward_m']:.2f}m "
+                f"y={ground['y_left_m']:.2f}m"
+            )
+    return " | ".join(parts)
+
+
+def play(video_path, print_waypoints=False, print_every=1,
+         camera_height_m=config.APPROX_CAMERA_HEIGHT_M,
+         camera_pitch_deg=config.APPROX_CAMERA_PITCH_DEG):
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open: {video_path}")
@@ -88,7 +111,11 @@ def play(video_path):
 
     print(f"\nPlaying: {video_path}")
     print(f"  {total} frames @ {fps:.1f} fps")
-    print("  Space=pause  r=restart  d=debug steps  q/Esc=quit\n")
+    print("  Space=pause  r=restart  d=debug steps  q/Esc=quit")
+    if print_waypoints:
+        print(f"  Printing center waypoints every {print_every} frame(s)")
+        print("  Dots on the image are numbered to match terminal point indexes")
+    print()
 
     while True:
         if not paused:
@@ -97,11 +124,23 @@ def play(video_path):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 idx = 0
                 continue
-            if debug:
+            coords = None
+            if print_waypoints and not debug:
+                last_frame, coords = detect_lanes_with_coords(frame)
+            elif debug:
                 last_frame, *last_steps = detect_lanes_debug(frame)
             else:
                 last_frame = detect_lanes(frame)
             idx += 1
+
+            if print_waypoints and coords is not None and idx % print_every == 0:
+                coords = add_approx_ground_waypoints(
+                    coords,
+                    camera_height_m=camera_height_m,
+                    pitch_deg=camera_pitch_deg,
+                )
+                ts_ms = round((idx - 1) / fps * 1000.0, 1)
+                print(f"frame={idx - 1} time_ms={ts_ms} {_format_waypoints(coords)}")
 
         if last_frame is not None:
             display = draw_hud(last_frame.copy(), paused, video_path.name,
@@ -188,12 +227,30 @@ def main():
     parser.add_argument("video", nargs="?")
     parser.add_argument("--export", metavar="OUTPUT",
                          help="Export processed video to OUTPUT instead of playing it")
+    parser.add_argument("--print-waypoints", action="store_true",
+                        help="Print center waypoint pixels/meters while playing")
+    parser.add_argument("--print-every", type=int, default=10,
+                        help="Print every Nth frame when --print-waypoints is set")
+    parser.add_argument("--camera-height-m", type=float,
+                        default=config.APPROX_CAMERA_HEIGHT_M,
+                        help="Approximate camera height for printed meter waypoints")
+    parser.add_argument("--camera-pitch-deg", type=float,
+                        default=config.APPROX_CAMERA_PITCH_DEG,
+                        help="Approximate camera downward pitch for printed meter waypoints")
     args = parser.parse_args()
+    if args.print_every < 1:
+        raise ValueError("--print-every must be >= 1")
     video_path = resolve_video(args.video)
     if args.export:
         export_video(video_path, Path(args.export))
     else:
-        play(video_path)
+        play(
+            video_path,
+            print_waypoints=args.print_waypoints,
+            print_every=args.print_every,
+            camera_height_m=args.camera_height_m,
+            camera_pitch_deg=args.camera_pitch_deg,
+        )
 
 
 if __name__ == "__main__":

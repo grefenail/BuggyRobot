@@ -87,8 +87,8 @@ STALE_RESET_FRAMES = 150   # clear stale lock after this many failed frames (~5s
                            # holds the last known position on screen while detection is briefly lost)
 KEEP_LAST_LINE_ON_MISS = True  # When Hough finds no usable lane in a frame, keep drawing the
                                # last accepted lane instead of dropping or straightening it.
-LINE_TOP_FRAC      = 0.34   # where the drawn line starts (top)
-LINE_BOTTOM_FRAC   = 0.87   # where the drawn line ends (bottom)
+LINE_TOP_FRAC      = 0.05   # where the drawn line starts (top) -- match IPM_DST_FRAC top edge
+LINE_BOTTOM_FRAC   = 0.95   # where the drawn line ends (bottom) -- match IPM_DST_FRAC bottom edge
 ARC_MAX_JUMP_PX    = 60    # reject a single-frame fit that would move an already-locked edge
                            # more than this many px (raw per-frame fits are noisy; better to
                            # skip a bad frame than blend the outlier in)
@@ -122,6 +122,22 @@ LANE_FILL_COLOR = (0, 200, 0)    # green fill
 LANE_FILL_ALPHA = 0.40           # opacity
 BORDER_COLOR    = (0, 255, 255)  # yellow border
 BORDER_WIDTH    = 4
+CENTER_COLOR    = (255, 255, 255)  # white centerline
+CENTER_WIDTH    = 3
+CENTER_DOT_COLOR = (0, 165, 255)   # orange sampled center waypoints
+CENTER_DOT_RADIUS = 9
+CENTER_LABEL_COLOR = (255, 255, 255)
+CENTER_LABEL_SCALE = 0.85
+CENTER_LABEL_THICKNESS = 2
+CENTER_WAYPOINT_COUNT = 10          # sampled centerline points for coordinate export
+
+# Approximate camera model for early ROS waypoint testing.
+# Replace these with real calibration once camera intrinsics/extrinsics
+# are measured. Values assume a 720x1280 rotated iPhone 16 1x/narrow view.
+APPROX_CAMERA_FX_PX = 880.0
+APPROX_CAMERA_FY_PX = 880.0
+APPROX_CAMERA_HEIGHT_M = 1.0
+APPROX_CAMERA_PITCH_DEG = 15.0     # downward pitch from horizontal
 
 # Debug visualisation colours
 LEFT_COLOR  = (0, 0, 255)
