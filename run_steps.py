@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "pipeline"))
 
 import cv2
 import config
-from step1_mask  import apply_white_mask
+from step1_mask  import apply_white_mask, apply_white_mask_relative
 from step2_canny import apply_canny
 from step5_fit   import update_fit, get_debug_info, MIN_ARC_POINTS, reset as reset_fit
 from step6_draw  import fill_lane, lane_overlay
@@ -109,7 +109,7 @@ def run_pipeline(frame_bgr):
     work_frame = warp_to_birdseye(frame_bgr)
     h, w = work_frame.shape[:2]
 
-    gray  = apply_white_mask(work_frame)
+    gray  = apply_white_mask_relative(work_frame)
     edges = apply_canny(gray)
     lx, ly, rx, ry, hough_vis, roi, vertices = detect_with_stable_roi(edges, h, w)
     _, _, min_y, max_y, lc, rc = update_fit(lx, ly, rx, ry, h, w)

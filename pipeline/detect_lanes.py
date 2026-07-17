@@ -13,7 +13,7 @@ in bird's-eye coordinates (see config.py / ipm.py).
 
 import cv2
 from config import ROTATE_CW, LANE_FILL_ALPHA, CENTER_WAYPOINT_COUNT
-from step1_mask  import apply_white_mask
+from step1_mask  import apply_white_mask, apply_white_mask_relative
 from step2_canny import apply_canny
 from step5_fit   import update_fit
 from step6_draw  import lane_overlay, fill_lane, center_curve
@@ -33,7 +33,7 @@ def _blend_overlay(base, overlay):
 
 def _run_detection(bird_frame):
     h, w = bird_frame.shape[:2]
-    gray = apply_white_mask(bird_frame)
+    gray = apply_white_mask_relative(bird_frame, 1)
     edges = apply_canny(gray)
     lx, ly, rx, ry, hough_vis, roi, vertices = detect_with_stable_roi(edges, h, w)
     _, _, min_y, max_y, lc, rc = update_fit(lx, ly, rx, ry, h, w)

@@ -125,10 +125,19 @@ def play(video_path, print_waypoints=False, print_every=1,
     while True:
         if not paused:
             ok, frame = cap.read()
+
+            # rotate counterclockwise 90 degrees for portrait videos
+            if ok and frame.shape[0] > frame.shape[1]:
+                frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
             if not ok:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 idx = 0
                 continue
+
+            # add gaussian blur to reduce flicker of waypoints between frames
+            frame = cv2.GaussianBlur(frame, (11, 11), 0)
+
             coords = None
             if need_coords and not debug:
                 last_frame, coords = detect_lanes_with_coords(frame)
