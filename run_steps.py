@@ -103,10 +103,27 @@ def draw_debug_overlay(img, info, n_left, n_right):
     return img
 
 
+def processing_frame(frame_bgr):
+    scale = float(config.PROCESS_SCALE)
+    if scale <= 0:
+        raise ValueError("PROCESS_SCALE must be greater than 0")
+    if abs(scale - 1.0) < 1e-6:
+        return frame_bgr
+    return cv2.resize(frame_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+
+
+def resize_overlay_to_frame(overlay, frame_shape):
+    target_h, target_w = frame_shape[:2]
+    if overlay.shape[:2] == (target_h, target_w):
+        return overlay
+    return cv2.resize(overlay, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+
+
 def run_pipeline(frame_bgr):
     if config.ROTATE_CW:
         frame_bgr = cv2.rotate(frame_bgr, cv2.ROTATE_90_CLOCKWISE)
-    work_frame = warp_to_birdseye(frame_bgr)
+    process_frame = processing_frame(frame_bgr)
+    work_frame = warp_to_birdseye(process_frame)
     h, w = work_frame.shape[:2]
 
     gray  = apply_white_mask_relative(work_frame)
@@ -115,7 +132,10 @@ def run_pipeline(frame_bgr):
     _, _, min_y, max_y, lc, rc = update_fit(lx, ly, rx, ry, h, w)
 
     result = frame_bgr.copy()
-    overlay = warp_to_vehicle(lane_overlay(work_frame.shape, lc, rc))
+    overlay = resize_overlay_to_frame(
+        warp_to_vehicle(lane_overlay(work_frame.shape, lc, rc)),
+        frame_bgr.shape,
+    )
     mask = overlay.any(axis=2)
     if mask.any():
         blended = cv2.addWeighted(result, 1.0 - config.LANE_FILL_ALPHA,

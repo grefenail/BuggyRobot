@@ -12,6 +12,7 @@ in bird's-eye coordinates (see config.py / ipm.py).
 """
 
 import cv2
+import config
 from config import ROTATE_CW, LANE_FILL_ALPHA, CENTER_WAYPOINT_COUNT
 from step1_mask  import apply_white_mask, apply_white_mask_relative
 from step2_canny import apply_canny
@@ -31,6 +32,23 @@ def _blend_overlay(base, overlay):
     return out
 
 
+def _processing_frame(frame_bgr):
+    scale = float(config.PROCESS_SCALE)
+    if scale <= 0:
+        raise ValueError("PROCESS_SCALE must be greater than 0")
+    if abs(scale - 1.0) < 1e-6:
+        return frame_bgr
+    return cv2.resize(frame_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+
+
+def _vehicle_overlay_for_frame(frame_shape, bird_shape, lc, rc):
+    overlay = warp_to_vehicle(lane_overlay(bird_shape, lc, rc))
+    target_h, target_w = frame_shape[:2]
+    if overlay.shape[:2] != (target_h, target_w):
+        overlay = cv2.resize(overlay, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+    return overlay
+
+
 def _run_detection(bird_frame):
     h, w = bird_frame.shape[:2]
     gray = apply_white_mask_relative(bird_frame, 1)
@@ -44,9 +62,10 @@ def detect_lanes(frame_bgr):
     if ROTATE_CW:
         frame_bgr = cv2.rotate(frame_bgr, cv2.ROTATE_90_CLOCKWISE)
 
-    bird_frame = warp_to_birdseye(frame_bgr)
+    process_frame = _processing_frame(frame_bgr)
+    bird_frame = warp_to_birdseye(process_frame)
     _, _, _, _, _, _, _, lc, rc = _run_detection(bird_frame)
-    overlay = warp_to_vehicle(lane_overlay(bird_frame.shape, lc, rc))
+    overlay = _vehicle_overlay_for_frame(frame_bgr.shape, bird_frame.shape, lc, rc)
     return _blend_overlay(frame_bgr, overlay)
 
 
@@ -58,6 +77,7 @@ def _coords_from_detection(bird_frame, min_y, max_y, lc, rc):
     return {
         "bird_width": int(bird_frame.shape[1]),
         "bird_height": int(bird_frame.shape[0]),
+        "process_scale": float(config.PROCESS_SCALE),
         "min_y": int(min_y),
         "max_y": int(max_y),
         "left_curve": [[int(x), int(y)] for x, y in lc] if lc is not None else None,
@@ -72,9 +92,10 @@ def detect_lanes_with_coords(frame_bgr):
     if ROTATE_CW:
         frame_bgr = cv2.rotate(frame_bgr, cv2.ROTATE_90_CLOCKWISE)
 
-    bird_frame = warp_to_birdseye(frame_bgr)
+    process_frame = _processing_frame(frame_bgr)
+    bird_frame = warp_to_birdseye(process_frame)
     _, _, _, _, _, min_y, max_y, lc, rc = _run_detection(bird_frame)
-    overlay = warp_to_vehicle(lane_overlay(bird_frame.shape, lc, rc))
+    overlay = _vehicle_overlay_for_frame(frame_bgr.shape, bird_frame.shape, lc, rc)
     return _blend_overlay(frame_bgr, overlay), _coords_from_detection(
         bird_frame, min_y, max_y, lc, rc
     )
@@ -91,7 +112,8 @@ def detect_lanes_birdeye_coords(frame_bgr):
     if ROTATE_CW:
         frame_bgr = cv2.rotate(frame_bgr, cv2.ROTATE_90_CLOCKWISE)
 
-    bird_frame = warp_to_birdseye(frame_bgr)
+    process_frame = _processing_frame(frame_bgr)
+    bird_frame = warp_to_birdseye(process_frame)
     _, _, _, _, _, min_y, max_y, lc, rc = _run_detection(bird_frame)
     return _coords_from_detection(bird_frame, min_y, max_y, lc, rc)
 
@@ -101,12 +123,15 @@ def detect_lanes_debug(frame_bgr):
     if ROTATE_CW:
         frame_bgr = cv2.rotate(frame_bgr, cv2.ROTATE_90_CLOCKWISE)
 
-    bird_frame = warp_to_birdseye(frame_bgr)
+    process_frame = _processing_frame(frame_bgr)
+    bird_frame = warp_to_birdseye(process_frame)
     gray, edges, roi, hough_vis, vertices, min_y, max_y, lc, rc = _run_detection(bird_frame)
 
     bird = fill_lane(bird_frame.copy(), lc, rc, min_y, max_y)
     cv2.polylines(bird, vertices, isClosed=True, color=(255, 0, 255), thickness=2)
     bird = draw_destination_overlay(bird)
-    result = _blend_overlay(frame_bgr, warp_to_vehicle(lane_overlay(bird_frame.shape, lc, rc)))
+    result = _blend_overlay(
+        frame_bgr, _vehicle_overlay_for_frame(frame_bgr.shape, bird_frame.shape, lc, rc)
+    )
 
     return result, gray, edges, roi, hough_vis, bird

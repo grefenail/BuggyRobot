@@ -72,6 +72,9 @@ def add_approx_ground_waypoints(
 
     width = coords["bird_width"]
     height = coords["bird_height"]
+    process_scale = float(coords.get("process_scale", 1.0))
+    fx *= process_scale
+    fy *= process_scale
     _, bird_to_vehicle = get_matrices(width, height)
 
     waypoints_m = []

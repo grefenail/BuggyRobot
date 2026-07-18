@@ -67,6 +67,10 @@ def _smooth(prev, new):
             for i in range(len(new))]
 
 
+def _scaled_px(value):
+    return max(1, int(round(value * float(config.PROCESS_SCALE))))
+
+
 def _line_fit(xs, ys, min_y, max_y, width):
     poly = np.poly1d(np.polyfit(ys, xs, deg=1))
     return [int(np.clip(poly(max_y), 0, width - 1)),
@@ -136,7 +140,7 @@ def _bend_is_reasonable(curve):
         return True
     t = (ys - ys[0]) / (ys[-1] - ys[0])
     chord_x = xs[0] + t * (xs[-1] - xs[0])
-    return np.abs(xs - chord_x).max() <= config.MAX_BEND_DEVIATION_PX
+    return np.abs(xs - chord_x).max() <= _scaled_px(config.MAX_BEND_DEVIATION_PX)
 
 
 def _fit_side(xs, ys, min_y, max_y, width):
@@ -203,8 +207,10 @@ def update_fit(left_x, left_y, right_x, right_y, height, width):
     # position gets rejected as "noise", freezing on the bad value
     # until a full stale-reset -- which can land on another bad lock
     # and repeat the cycle.
-    jump_limit = (config.ARC_MAX_JUMP_PX if _confirm_ct >= config.ARC_JUMP_CONFIRM_FRAMES
-                  else config.ARC_MAX_JUMP_PX_FRESH)
+    jump_limit = _scaled_px(
+        config.ARC_MAX_JUMP_PX if _confirm_ct >= config.ARC_JUMP_CONFIRM_FRAMES
+        else config.ARC_MAX_JUMP_PX_FRESH
+    )
     if new_left is not None and _left_pts is not None and \
             max(abs(new_left[i] - _left_pts[i]) for i in range(2)) > jump_limit:
         new_left = None
@@ -230,8 +236,8 @@ def update_fit(left_x, left_y, right_x, right_y, height, width):
     # narrows to a sliver is just as wrong as one that crosses outright
     # -- real lane lines don't pinch down to near-zero width.
     if (_left_pts is not None and _right_pts is not None and
-            (_right_pts[0] - _left_pts[0] < config.MIN_LANE_WIDTH_PX or
-             _right_pts[1] - _left_pts[1] < config.MIN_LANE_WIDTH_PX)):
+            (_right_pts[0] - _left_pts[0] < _scaled_px(config.MIN_LANE_WIDTH_PX) or
+             _right_pts[1] - _left_pts[1] < _scaled_px(config.MIN_LANE_WIDTH_PX))):
         _left_pts = _right_pts = None
         got_left = got_right = False
         quad_left = quad_right = None

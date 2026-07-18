@@ -17,25 +17,34 @@ def apply_white_mask(frame_bgr):
     white_mask = cv2.inRange(hsv, (0, 0, config.WHITE_V_MIN), (180, config.WHITE_S_MAX, 255))
     return cv2.bitwise_and(gray, gray, mask=white_mask)
 
-def apply_white_mask_relative(frame_bgr, top_percent=5):
+def apply_white_mask_relative(frame_bgr, top_percent=10):
     """
-    Keep the brightest `top_percent` percent of pixels.
+    Keep the brightest `top_percent` percent of pixels on each half of the image.
     """
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
 
-    flat = gray.ravel()
-    keep_count = int(flat.size * top_percent / 100)
-    if keep_count <= 0:
+    mask = np.zeros_like(gray, dtype=np.uint8)
+    mid_x = gray.shape[1] // 2
+
+    for x0, x1 in (
+        (0, mid_x),
+        (mid_x, gray.shape[1]),
+    ):
+        region = gray[:, x0:x1]
+        flat = region.ravel()
+        keep_count = int(flat.size * top_percent / 100)
+        if keep_count <= 0:
+            continue
+
+        keep_count = min(keep_count, flat.size)
+
+        # Pick exact pixel positions so equal-brightness ties do not keep too many pixels.
+        keep_indices = np.argpartition(flat, flat.size - keep_count)[flat.size - keep_count:]
+
+        ys, xs = np.unravel_index(keep_indices, region.shape)
+        mask[ys, xs + x0] = 255
+
+    if not np.any(mask):
         return np.zeros_like(gray)
-
-    keep_count = min(keep_count, flat.size)
-
-    # Pick exact pixel positions so equal-brightness ties do not keep too many pixels.
-    keep_indices = np.argpartition(flat, flat.size - keep_count)[flat.size - keep_count:]
-
-    mask = np.zeros_like(flat, dtype=np.uint8)
-    mask[keep_indices] = 255
-    assert np.count_nonzero(mask) == keep_count
-    mask = mask.reshape(gray.shape)
 
     return cv2.bitwise_and(gray, gray, mask=mask)

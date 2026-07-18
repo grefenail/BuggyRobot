@@ -10,6 +10,10 @@ import numpy as np
 
 ROTATE_CW = False
 
+# Resize frames before the expensive OpenCV pipeline. 0.5 turns 1280x720
+# into 640x360, which is much easier for a Raspberry Pi to process.
+PROCESS_SCALE = 0.5
+
 # Step 1 — HSV white mask
 WHITE_V_MIN = 175   # min brightness  (lane paint ~240+, concrete ~180)
 WHITE_S_MAX = 75    # max saturation  (pure white = low S, red track = high S) -- was 45, but that's

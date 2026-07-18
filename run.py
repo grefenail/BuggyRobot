@@ -47,7 +47,12 @@ def resolve_video(name):
 def draw_hud(frame, paused, name, idx, total, debug):
     status = "PAUSED" if paused else "PLAYING"
     dbg    = " | DEBUG ON" if debug else ""
-    text   = f"{name} | {status} | {idx}/{total} | Space: pause  r: restart  d: debug  q: quit{dbg}"
+    h, w = frame.shape[:2]
+    text   = (
+        f"{name} | {status} | {idx}/{total} | "
+        f"proc {config.PROCESS_SCALE:g}x | out {w}x{h} | "
+        f"Space: pause  r: restart  d: debug  q: quit{dbg}"
+    )
     font, scale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2
     (tw, th), bl = cv2.getTextSize(text, font, scale, thick)
     cv2.rectangle(frame, (0, 0), (tw + 18, th + bl + 18), (0, 0, 0), -1)
@@ -58,7 +63,9 @@ def draw_hud(frame, paused, name, idx, total, debug):
 def label(img, text, is_gray=False):
     """Add a step label to a debug image."""
     out = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR) if is_gray else img.copy()
-    cv2.rectangle(out, (0, 0), (len(text) * 11 + 10, 28), (0, 0, 0), -1)
+    h, w = out.shape[:2]
+    text = f"{text} ({w}x{h})"
+    cv2.rectangle(out, (0, 0), (min(len(text) * 11 + 10, w), 28), (0, 0, 0), -1)
     cv2.putText(out, text, (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                 (255, 255, 255), 1, cv2.LINE_AA)
     return out
@@ -113,6 +120,23 @@ def _format_waypoints(coords):
     return " | ".join(parts)
 
 
+def _processing_size(frame_shape):
+    h, w = frame_shape[:2]
+    scale = float(config.PROCESS_SCALE)
+    return max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+
+
+def _print_scale_info(input_frame, output_frame):
+    in_h, in_w = input_frame.shape[:2]
+    out_h, out_w = output_frame.shape[:2]
+    proc_w, proc_h = _processing_size(input_frame.shape)
+    print(
+        f"  Scale: input={in_w}x{in_h}  "
+        f"process={proc_w}x{proc_h} ({config.PROCESS_SCALE:g}x)  "
+        f"output={out_w}x{out_h}"
+    )
+
+
 def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
          live_input=False, live_topic=config.ROS_DEFAULT_INPUT_IMAGE_TOPIC,
          camera_height_m=config.APPROX_CAMERA_HEIGHT_M,
@@ -139,6 +163,7 @@ def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
     last_frame = None
     last_steps = None
     idx        = 0
+    printed_scale = False
 
     WIN_MAIN = "Test 2 — mrhwick Algorithm"
     if not headless:
@@ -191,6 +216,9 @@ def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
                 last_frame, *last_steps = detect_lanes_debug(frame)
             else:
                 last_frame = detect_lanes(frame)
+            if not printed_scale:
+                _print_scale_info(frame, last_frame)
+                printed_scale = True
             idx += 1
 
             if coords is not None:
@@ -270,6 +298,7 @@ def export_video(video_path, output_path):
     # Ignore unreliable MP4 rotation metadata and orient the camera explicitly.
     frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
     first = detect_lanes(frame)
+    _print_scale_info(frame, first)
     h, w  = first.shape[:2]
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
