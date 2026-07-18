@@ -1,4 +1,4 @@
-"""Optional ROS 2 publisher for the lane centerline waypoints.
+"""Optional ROS 2 publishers for lane waypoints and the overlay image.
 
 rclpy is only imported inside WaypointPublisher.__init__, so importing
 this module (and running the rest of the pipeline) doesn't require a
@@ -9,40 +9,64 @@ import config
 
 
 class WaypointPublisher:
-    """Publishes each frame's center waypoints as a nav_msgs/Path.
+    """Publishes center waypoints and the processed lane-overlay image.
 
     Robot frame convention (REP-103): x = forward meters, y = left
     meters -- matching pipeline.waypoints.pixel_to_ground_m.
     """
 
-    def __init__(self, topic=config.ROS_DEFAULT_TOPIC, frame_id=config.ROS_DEFAULT_FRAME_ID):
+    def __init__(
+        self,
+        topic=config.ROS_DEFAULT_TOPIC,
+        frame_id=config.ROS_DEFAULT_FRAME_ID,
+        image_topic=config.ROS_DEFAULT_IMAGE_TOPIC,
+        image_frame_id=config.ROS_DEFAULT_IMAGE_FRAME_ID,
+    ):
         import rclpy
         from nav_msgs.msg import Path
         from rclpy.node import Node
+        from sensor_msgs.msg import Image
 
         if not rclpy.ok():
             rclpy.init()
 
         self._rclpy = rclpy
         self._frame_id = frame_id
+        self._image_frame_id = image_frame_id
         self._node = Node("lane_waypoint_publisher")
         self._publisher = self._node.create_publisher(Path, topic, 10)
+        self._image_publisher = self._node.create_publisher(Image, image_topic, 10)
 
-    def publish(self, coords):
-        """Publish coords['center_waypoints_m_approx'] as a Path message.
+    def publish(self, coords, image_bgr=None):
+        """Publish the overlay image and available ground waypoints.
 
         Frames with no locked lane (coords has no ground waypoints) are
-        skipped rather than publishing an empty/stale Path.
+        skipped rather than publishing an empty/stale Path. The image is still
+        published so the detector output remains visible.
         """
         from geometry_msgs.msg import PoseStamped
         from nav_msgs.msg import Path
+        from sensor_msgs.msg import Image
 
-        waypoints = coords.get("center_waypoints_m_approx")
+        stamp = self._node.get_clock().now().to_msg()
+
+        if image_bgr is not None:
+            image = Image()
+            image.header.stamp = stamp
+            image.header.frame_id = self._image_frame_id
+            image.height, image.width = image_bgr.shape[:2]
+            image.encoding = "bgr8"
+            image.is_bigendian = False
+            image.step = image.width * 3
+            image.data = image_bgr.tobytes()
+            self._image_publisher.publish(image)
+
+        waypoints = coords.get("center_waypoints_m_approx") if coords else None
         if not waypoints:
             return
 
         msg = Path()
-        msg.header.stamp = self._node.get_clock().now().to_msg()
+        msg.header.stamp = stamp
         msg.header.frame_id = self._frame_id
 
         for wp in waypoints:

@@ -8,7 +8,7 @@ still-tunable version with those toggles in place.
 """
 import numpy as np
 
-ROTATE_CW = True
+ROTATE_CW = False
 
 # Step 1 — HSV white mask
 WHITE_V_MIN = 175   # min brightness  (lane paint ~240+, concrete ~180)
@@ -144,6 +144,9 @@ APPROX_CAMERA_PITCH_DEG = 15.0     # downward pitch from horizontal
 # dependency of the rest of the pipeline.
 ROS_DEFAULT_TOPIC    = "/lane_waypoints"
 ROS_DEFAULT_FRAME_ID = "base_link"
+ROS_DEFAULT_IMAGE_TOPIC = "/lane_overlay/image_raw"
+ROS_DEFAULT_IMAGE_FRAME_ID = "camera_optical_frame"
+ROS_DEFAULT_INPUT_IMAGE_TOPIC = "/camera/image_raw"
 
 # Debug visualisation colours
 LEFT_COLOR  = (0, 0, 255)

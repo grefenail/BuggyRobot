@@ -4,6 +4,8 @@ Test 2 — mrhwick Medium article algorithm.
 Run:
     python buggyvis1/run.py
     python buggyvis1/run.py IMG_6744.MP4
+    python buggyvis1/run.py --headless IMG_6744.MP4
+    python buggyvis1/run.py --live-input --headless --publish-ros
 
 Controls: Space=pause  r=restart  d=debug steps  q/Esc=quit
 """
@@ -17,6 +19,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "pipeline"))
 
 import cv2
+import numpy as np
 from detect_lanes import detect_lanes, detect_lanes_debug, detect_lanes_with_coords
 from waypoints import add_approx_ground_waypoints
 import config
@@ -61,13 +64,34 @@ def label(img, text, is_gray=False):
     return out
 
 
-DEBUG_WINDOWS = [
-    "Step 0 - Bird's-eye perspective",
-    "Step 1 — Grayscale (white mask applied)",
-    "Step 2 — Canny Edges",
-    "Step 3 — ROI Mask",
-    "Step 4 — Hough Segments (red=left  blue=right  yellow=rejected)",
-]
+DEBUG_WIN = "Debug Steps (0-4)"
+
+
+def _tile_debug_images(imgs, cols=3, thumb_w=380):
+    """
+    Resize a list of BGR debug images to a common thumbnail width and
+    arrange them into one grid image, so all pipeline steps show in a
+    single window instead of one full-size OS window per step (which
+    over X11 forwarding turns into a pile of oversized, overlapping
+    windows you have to hunt down and close individually).
+    """
+    thumbs = []
+    for img in imgs:
+        h, w = img.shape[:2]
+        thumbs.append(cv2.resize(img, (thumb_w, int(h * thumb_w / w))))
+    thumb_h = max(t.shape[0] for t in thumbs)
+    blank = np.zeros((thumb_h, thumb_w, 3), dtype=np.uint8)
+    padded = [
+        np.vstack([t, np.zeros((thumb_h - t.shape[0], thumb_w, 3), dtype=np.uint8)])
+        if t.shape[0] < thumb_h else t
+        for t in thumbs
+    ]
+    rows = []
+    for i in range(0, len(padded), cols):
+        row = padded[i:i + cols]
+        row += [blank] * (cols - len(row))
+        rows.append(np.hstack(row))
+    return np.vstack(rows)
 
 
 def _format_waypoints(coords):
@@ -89,16 +113,25 @@ def _format_waypoints(coords):
     return " | ".join(parts)
 
 
-def play(video_path, print_waypoints=False, print_every=1,
+def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
+         live_input=False, live_topic=config.ROS_DEFAULT_INPUT_IMAGE_TOPIC,
          camera_height_m=config.APPROX_CAMERA_HEIGHT_M,
          camera_pitch_deg=config.APPROX_CAMERA_PITCH_DEG,
          ros_publisher=None, ros_every=1):
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        raise RuntimeError(f"Cannot open: {video_path}")
-
-    fps   = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if live_input:
+        from ros_input import RosImageSource
+        source = RosImageSource(live_topic)
+        fps = 30.0
+        total = 0
+        source_name = live_topic
+    else:
+        source = cv2.VideoCapture(str(video_path))
+        if not source.isOpened():
+            raise RuntimeError(f"Cannot open: {video_path}")
+        source.set(cv2.CAP_PROP_ORIENTATION_AUTO, 0)
+        fps = source.get(cv2.CAP_PROP_FPS) or 30.0
+        total = int(source.get(cv2.CAP_PROP_FRAME_COUNT))
+        source_name = video_path.name
     delay = max(1, int(1000 / fps))
 
     paused     = False
@@ -108,11 +141,19 @@ def play(video_path, print_waypoints=False, print_every=1,
     idx        = 0
 
     WIN_MAIN = "Test 2 — mrhwick Algorithm"
-    cv2.namedWindow(WIN_MAIN, cv2.WINDOW_NORMAL)
+    if not headless:
+        cv2.namedWindow(WIN_MAIN, cv2.WINDOW_NORMAL)
 
-    print(f"\nPlaying: {video_path}")
-    print(f"  {total} frames @ {fps:.1f} fps")
-    print("  Space=pause  r=restart  d=debug steps  q/Esc=quit")
+    mode = "Processing" if headless else "Playing"
+    print(f"\n{mode}: {source_name}")
+    if live_input:
+        print("  Live ROS image input")
+    else:
+        print(f"  {total} frames @ {fps:.1f} fps")
+    if headless:
+        print("  Headless mode: display and keyboard controls disabled")
+    else:
+        print("  Space=pause  r=restart  d=debug steps  q/Esc=quit")
     if print_waypoints:
         print(f"  Printing center waypoints every {print_every} frame(s)")
         print("  Dots on the image are numbered to match terminal point indexes")
@@ -122,14 +163,24 @@ def play(video_path, print_waypoints=False, print_every=1,
 
     need_coords = print_waypoints or ros_publisher is not None
 
+    frame_count = 0
     while True:
         if not paused:
-            ok, frame = cap.read()
+            ok, frame = source.read()
+            print(f"Fetching frame {frame_count}", end="\r")
+            frame_count += 1
             if not ok:
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                if live_input or headless:
+                    break
+                source.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 idx = 0
                 continue
             coords = None
+            if live_input:
+                #frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                pass
+            else:
+                frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
             if need_coords and not debug:
                 last_frame, coords = detect_lanes_with_coords(frame)
             elif debug:
@@ -147,15 +198,16 @@ def play(video_path, print_waypoints=False, print_every=1,
                 if print_waypoints and idx % print_every == 0:
                     ts_ms = round((idx - 1) / fps * 1000.0, 1)
                     print(f"frame={idx - 1} time_ms={ts_ms} {_format_waypoints(coords)}")
-                if ros_publisher is not None and idx % ros_every == 0:
-                    ros_publisher.publish(coords)
+            if ros_publisher is not None and idx % ros_every == 0:
+                ros_publisher.publish(coords, last_frame)
 
-        if last_frame is not None:
-            display = draw_hud(last_frame.copy(), paused, video_path.name,
-                               idx, total, debug)
+        if not headless and last_frame is not None:
+            total_label = total if total else "live"
+            display = draw_hud(last_frame.copy(), paused, source_name,
+                               idx, total_label, debug)
             cv2.imshow(WIN_MAIN, display)
 
-        if debug and last_steps is not None:
+        if not headless and debug and last_steps is not None:
             gray, edges, roi, hough, bird = last_steps
             imgs = [
                 label(bird,   "Step 0 - Bird's-eye perspective"),
@@ -164,15 +216,16 @@ def play(video_path, print_waypoints=False, print_every=1,
                 label(roi,    "Step 3 — ROI Mask",     is_gray=True),
                 label(hough,  "Step 4 — Hough  red=left  blue=right  yellow=rejected"),
             ]
-            for win, img in zip(DEBUG_WINDOWS, imgs):
-                cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-                cv2.imshow(win, img)
-        elif not debug:
-            for win in DEBUG_WINDOWS:
-                try:
-                    cv2.destroyWindow(win)
-                except cv2.error:
-                    pass
+            cv2.namedWindow(DEBUG_WIN, cv2.WINDOW_NORMAL)
+            cv2.imshow(DEBUG_WIN, _tile_debug_images(imgs))
+        elif not headless and not debug:
+            try:
+                cv2.destroyWindow(DEBUG_WIN)
+            except cv2.error:
+                pass
+
+        if headless:
+            continue
 
         key = cv2.waitKey(delay if not paused else 50) & 0xFF
         if key in (ord("q"), 27):
@@ -180,8 +233,8 @@ def play(video_path, print_waypoints=False, print_every=1,
         elif key == ord(" "):
             paused = not paused
             time.sleep(0.1)
-        elif key == ord("r"):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        elif key == ord("r") and not live_input:
+            source.set(cv2.CAP_PROP_POS_FRAMES, 0)
             idx = 0
             paused = False
         elif key == ord("d"):
@@ -190,14 +243,19 @@ def play(video_path, print_waypoints=False, print_every=1,
                 last_steps = None
             print(f"Debug {'ON' if debug else 'OFF'}")
 
-    cap.release()
-    cv2.destroyAllWindows()
+    if live_input:
+        source.close()
+    else:
+        source.release()
+    if not headless:
+        cv2.destroyAllWindows()
 
 
 def export_video(video_path, output_path):
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open: {video_path}")
+    cap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 0)
 
     fps   = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -205,6 +263,8 @@ def export_video(video_path, output_path):
     ok, frame = cap.read()
     if not ok:
         raise RuntimeError(f"Cannot read any frames from: {video_path}")
+    # Ignore unreliable MP4 rotation metadata and orient the camera explicitly.
+    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
     first = detect_lanes(frame)
     h, w  = first.shape[:2]
 
@@ -220,6 +280,7 @@ def export_video(video_path, output_path):
         ok, frame = cap.read()
         if not ok:
             break
+        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         writer.write(detect_lanes(frame))
         count += 1
         if count % 30 == 0:
@@ -235,6 +296,12 @@ def main():
     parser.add_argument("video", nargs="?")
     parser.add_argument("--export", metavar="OUTPUT",
                          help="Export processed video to OUTPUT instead of playing it")
+    parser.add_argument("--headless", action="store_true",
+                        help="Process without opening display windows (for servers/containers)")
+    parser.add_argument("--live-input", action="store_true",
+                        help="Read frames from a ROS image topic instead of a video file")
+    parser.add_argument("--live-topic", default=config.ROS_DEFAULT_INPUT_IMAGE_TOPIC,
+                        help=f"ROS input image topic. Default: {config.ROS_DEFAULT_INPUT_IMAGE_TOPIC}")
     parser.add_argument("--print-waypoints", action="store_true",
                         help="Print center waypoint pixels/meters while playing")
     parser.add_argument("--print-every", type=int, default=10,
@@ -251,6 +318,10 @@ def main():
                         help=f"ROS 2 topic to publish on. Default: {config.ROS_DEFAULT_TOPIC}")
     parser.add_argument("--ros-frame-id", default=config.ROS_DEFAULT_FRAME_ID,
                         help=f"frame_id for published poses. Default: {config.ROS_DEFAULT_FRAME_ID}")
+    parser.add_argument("--ros-image-topic", default=config.ROS_DEFAULT_IMAGE_TOPIC,
+                        help=f"ROS 2 lane-overlay image topic. Default: {config.ROS_DEFAULT_IMAGE_TOPIC}")
+    parser.add_argument("--ros-image-frame-id", default=config.ROS_DEFAULT_IMAGE_FRAME_ID,
+                        help=f"frame_id for the overlay image. Default: {config.ROS_DEFAULT_IMAGE_FRAME_ID}")
     parser.add_argument("--ros-every", type=int, default=1,
                         help="Publish every Nth frame when --publish-ros is set")
     args = parser.parse_args()
@@ -258,7 +329,11 @@ def main():
         raise ValueError("--print-every must be >= 1")
     if args.ros_every < 1:
         raise ValueError("--ros-every must be >= 1")
-    video_path = resolve_video(args.video)
+    if args.live_input and args.video:
+        parser.error("the video argument cannot be used with --live-input")
+    if args.live_input and args.export:
+        parser.error("--export cannot be used with --live-input")
+    video_path = None if args.live_input else resolve_video(args.video)
     if args.export:
         export_video(video_path, Path(args.export))
         return
@@ -266,13 +341,21 @@ def main():
     ros_publisher = None
     if args.publish_ros:
         from ros_publish import WaypointPublisher
-        ros_publisher = WaypointPublisher(topic=args.ros_topic, frame_id=args.ros_frame_id)
+        ros_publisher = WaypointPublisher(
+            topic=args.ros_topic,
+            frame_id=args.ros_frame_id,
+            image_topic=args.ros_image_topic,
+            image_frame_id=args.ros_image_frame_id,
+        )
 
     try:
         play(
             video_path,
             print_waypoints=args.print_waypoints,
             print_every=args.print_every,
+            headless=args.headless,
+            live_input=args.live_input,
+            live_topic=args.live_topic,
             camera_height_m=args.camera_height_m,
             camera_pitch_deg=args.camera_pitch_deg,
             ros_publisher=ros_publisher,

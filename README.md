@@ -110,18 +110,28 @@ extrinsics; replace them with real calibration before final testing.
 All scripts fall back to the first video found in `vids/` if no
 filename is given.
 
-**Publish waypoints to ROS 2** while playing (requires `rclpy` — install
+**Publish waypoints and the lane-overlay image to ROS 2** while playing
+(requires `rclpy` — install
 via a sourced ROS 2 distro, not pip):
 ```
 python run.py IMG_6743.MP4 --publish-ros
 python run.py IMG_6743.MP4 --publish-ros --ros-topic /lane_waypoints --ros-frame-id base_link
+python run.py IMG_6743.MP4 --publish-ros --ros-image-topic /lane_overlay/image_raw
+python run.py --live-input --headless --publish-ros
 ```
 Publishes a `nav_msgs/Path` each processed frame, with each pose's
 `x`/`y` set from the same `x_forward_m`/`y_left_m` ground waypoints
-described above (`z` and orientation left at identity). `rclpy` is
+described above (`z` and orientation left at identity). The processed
+camera frame, including the lane fill, boundaries, centerline, and numbered
+waypoints, is published as a `sensor_msgs/Image` with `bgr8` encoding on
+`/lane_overlay/image_raw`. `rclpy` is
 only imported when `--publish-ros` is passed, so the rest of the
 pipeline runs fine without ROS 2 installed. See
 [`pipeline/ros_publish.py`](pipeline/ros_publish.py).
+
+With `--live-input`, frames are read from `/camera/image_raw` instead of a
+video file. Use `--live-topic` to select a different `sensor_msgs/Image`
+topic. The subscriber accepts `bgr8`, `rgb8`, `bgra8`, `rgba8`, and `mono8`.
 
 ## Configuration
 

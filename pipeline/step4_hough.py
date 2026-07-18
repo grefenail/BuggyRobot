@@ -46,24 +46,26 @@ def detect_segments(cropped, width, center_x=None):
 
     split_x = center_x if center_x is not None else width / 2
 
-    for line in lines:
-        for x1, y1, x2, y2 in line:
-            dx = x2 - x1
-            dy = y2 - y1
+    # Depending on the OpenCV build (and whether the optional output array is
+    # reused), HoughLinesP may return either (N, 1, 4) or (N, 4).  Flatten the
+    # segment dimensions so both representations are handled identically.
+    for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4):
+        dx = x2 - x1
+        dy = y2 - y1
 
-            # In bird's-eye view valid lane markings are close to
-            # vertical, so classify by horizontal position instead of
-            # slope sign.
-            if abs(dy) < abs(dx) * MIN_SLOPE:
-                cv2.line(hough_vis, (x1, y1), (x2, y2), (0, 255, 255), 2)
-                continue
-            if (x1 + x2) / 2 < split_x:
-                left_x.extend([x1, x2])
-                left_y.extend([y1, y2])
-                cv2.line(hough_vis, (x1, y1), (x2, y2), LEFT_COLOR, 2)
-            else:
-                right_x.extend([x1, x2])
-                right_y.extend([y1, y2])
-                cv2.line(hough_vis, (x1, y1), (x2, y2), RIGHT_COLOR, 2)
+        # In bird's-eye view valid lane markings are close to
+        # vertical, so classify by horizontal position instead of
+        # slope sign.
+        if abs(dy) < abs(dx) * MIN_SLOPE:
+            cv2.line(hough_vis, (x1, y1), (x2, y2), (0, 255, 255), 2)
+            continue
+        if (x1 + x2) / 2 < split_x:
+            left_x.extend([x1, x2])
+            left_y.extend([y1, y2])
+            cv2.line(hough_vis, (x1, y1), (x2, y2), LEFT_COLOR, 2)
+        else:
+            right_x.extend([x1, x2])
+            right_y.extend([y1, y2])
+            cv2.line(hough_vis, (x1, y1), (x2, y2), RIGHT_COLOR, 2)
 
     return left_x, left_y, right_x, right_y, hough_vis
