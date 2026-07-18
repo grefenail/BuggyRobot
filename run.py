@@ -175,6 +175,10 @@ def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
                 source.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 idx = 0
                 continue
+
+            # add gaussian blur to reduce flicker of waypoints between frames
+            frame = cv2.GaussianBlur(frame, (11, 11), 0)
+
             coords = None
             if live_input:
                 #frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
