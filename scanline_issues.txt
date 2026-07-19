@@ -1,0 +1,4 @@
+Scanline issues
+===============
+
+1. The artificial/right-line creation is not working well after the right line is no longer visible.

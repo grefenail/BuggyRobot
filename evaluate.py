@@ -8,12 +8,14 @@ report, then averaged per video and across videos.
 Examples:
     python evaluate.py
     python evaluate.py IMG_6741.MP4 IMG_6742.MP4 --json scores.json
+    python evaluate.py IMG_6741.MP4 --scanline
 """
 
 import argparse
 import json
 from pathlib import Path
 import sys
+import time
 
 import cv2
 import numpy as np
@@ -26,6 +28,7 @@ from detect_lanes import detect_lanes_birdeye_coords
 from ipm import warp_to_birdseye
 from step1_mask import apply_white_mask
 import config
+from scanline_lane_experiment import detect_scanline_birdeye_coords, reset_scanline_state
 
 
 VIDEO_DIR = ROOT / "vids"
@@ -74,24 +77,33 @@ def _curve_score(mask, curve, count=50, radius=3):
     return hits, count, 100.0 * hits / count
 
 
-def evaluate_video(video_path, points=50, radius=3):
+def evaluate_video(video_path, points=50, radius=3, scanline=False, max_frames=None):
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {video_path}")
     cap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 0)
+    if scanline:
+        reset_scanline_state()
 
     frame_count = 0
     left_scores, right_scores = [], []
     left_hits = right_hits = 0
     left_total = right_total = 0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+    limit = total_frames if max_frames is None else min(total_frames, max_frames)
+    start = time.perf_counter()
 
     while True:
+        if max_frames is not None and frame_count >= max_frames:
+            break
         ok, frame = cap.read()
         if not ok:
             break
-        coords = detect_lanes_birdeye_coords(frame)
-
         oriented = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE) if config.ROTATE_CW else frame
+        if scanline:
+            coords = detect_scanline_birdeye_coords(oriented)
+        else:
+            coords = detect_lanes_birdeye_coords(frame)
         mask = apply_white_mask(warp_to_birdseye(oriented))
         left_hit, left_n, left_score = _curve_score(mask, coords.get("left_curve"), points, radius)
         right_hit, right_n, right_score = _curve_score(mask, coords.get("right_curve"), points, radius)
@@ -103,8 +115,15 @@ def evaluate_video(video_path, points=50, radius=3):
         left_total += left_n
         right_total += right_n
         frame_count += 1
+        if frame_count % 30 == 0:
+            elapsed = max(time.perf_counter() - start, 1e-6)
+            target = limit if limit else "?"
+            print(f"  {Path(video_path).name}: {frame_count}/{target} frames | run {frame_count / elapsed:.1f} fps", end="\r")
 
     cap.release()
+    if frame_count:
+        elapsed = max(time.perf_counter() - start, 1e-6)
+        print(f"  {Path(video_path).name}: {frame_count}/{limit if limit else '?'} frames | run {frame_count / elapsed:.1f} fps")
     if frame_count == 0:
         raise RuntimeError(f"Video contains no readable frames: {video_path}")
 
@@ -112,6 +131,7 @@ def evaluate_video(video_path, points=50, radius=3):
     right_average = float(np.mean(right_scores))
     return {
         "video": Path(video_path).name,
+        "detector": "scanline" if scanline else "pipeline",
         "frames": frame_count,
         "left_score": round(left_average, 3),
         "right_score": round(right_average, 3),
@@ -129,9 +149,13 @@ def main():
     parser.add_argument("--points", type=int, default=50, help="Samples per side (default: 50)")
     parser.add_argument("--radius", type=int, default=3, help="White-pixel search radius (default: 3)")
     parser.add_argument("--json", metavar="PATH", help="Also write results as JSON")
+    parser.add_argument("--scanline", action="store_true", help="Evaluate run_scanline.py scanline detector")
+    parser.add_argument("--max-frames", type=int, help="Evaluate only the first N frames")
     args = parser.parse_args()
     if args.points < 1 or args.radius < 0:
         parser.error("--points must be positive and --radius cannot be negative")
+    if args.max_frames is not None and args.max_frames < 1:
+        parser.error("--max-frames must be positive")
 
     paths = []
     for name in args.videos:
@@ -147,16 +171,22 @@ def main():
     if not paths:
         parser.error(f"No videos found in {VIDEO_DIR}")
 
-    results = [evaluate_video(path, args.points, args.radius) for path in paths]
+    results = [
+        evaluate_video(path, args.points, args.radius, args.scanline, args.max_frames)
+        for path in paths
+    ]
     overall = float(np.mean([item["video_score"] for item in results]))
     report = {
         "points_per_side": args.points,
         "radius_pixels": args.radius,
+        "detector": "scanline" if args.scanline else "pipeline",
+        "max_frames": args.max_frames,
         "videos": results,
         "overall_score": round(overall, 3),
     }
 
-    print("\nLane evaluation (score is percent)\n")
+    detector_name = "scanline" if args.scanline else "pipeline"
+    print(f"\nLane evaluation ({detector_name}, score is percent)\n")
     for item in results:
         print(f"{item['video']}: left={item['left_score']:.2f}%  "
               f"right={item['right_score']:.2f}%  video={item['video_score']:.2f}%  "
