@@ -13,8 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT / "pipeline"))
+ROOT = Path(__file__).resolve().parent.parent
 
 import config
 from ipm import get_matrices, warp_to_birdseye
