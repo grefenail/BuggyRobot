@@ -12,9 +12,12 @@ from step4_hough import detect_segments
 from ipm import birdseye_lane_center_frac
 
 
-def detect_with_stable_roi(edges, height, width):
+def detect_with_stable_roi(edges, height, width, prefer_left_x=None, prefer_right_x=None):
     """Build the bird's-eye ROI and run Hough within it."""
     roi, vertices = apply_birdseye_roi(edges, height, width)
     center_x = birdseye_lane_center_frac() * width
-    lx, ly, rx, ry, hough_vis = detect_segments(roi, width, center_x=center_x)
+    lx, ly, rx, ry, hough_vis = detect_segments(
+        roi, width, center_x=center_x,
+        prefer_left_x=prefer_left_x, prefer_right_x=prefer_right_x,
+    )
     return lx, ly, rx, ry, hough_vis, roi, vertices

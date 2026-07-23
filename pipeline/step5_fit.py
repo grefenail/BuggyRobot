@@ -28,7 +28,9 @@ _left_curve   = None   # last drawn boundary polyline (bottom-to-top), 2 pts if 
 _right_curve  = None
 _confirm_ct   = 0      # consecutive frames held since the last full lock loss
 
-MIN_ARC_POINTS = 4  # minimum points per side to attempt a line/quadratic fit at all
+MIN_ARC_POINTS = 6  # minimum points per side to attempt a line/quadratic fit at all -- raised
+                    # from 4 alongside the MIN_ARC_Y_SPAN_FRAC check (config.py) as extra
+                    # margin against a 3-parameter quadratic being barely-constrained
 
 
 def reset():
@@ -67,8 +69,12 @@ def _smooth(prev, new):
             for i in range(len(new))]
 
 
-def _scaled_px(value):
-    return max(1, int(round(value * float(config.PROCESS_SCALE))))
+def _scaled_px(value, width):
+    """Scale an absolute-pixel constant (tuned at REFERENCE_PROCESSING_WIDTH)
+    to the actual processing frame width. Ratio-based against the real
+    runtime width, not just PROCESS_SCALE, so it stays correct even when the
+    native camera resolution itself changes independently of PROCESS_SCALE."""
+    return max(1, int(round(value * width / config.REFERENCE_PROCESSING_WIDTH)))
 
 
 def _line_fit(xs, ys, min_y, max_y, width):
@@ -127,7 +133,7 @@ def _sample_curve(poly, y_bot, y_top, x_bot, x_top, width):
     return [(int(np.clip(x, 0, width - 1)), int(y)) for x, y in zip(corrected, ys)]
 
 
-def _bend_is_reasonable(curve):
+def _bend_is_reasonable(curve, width):
     """
     Reject a sampled curve whose middle bulges implausibly far from
     the straight chord between its own endpoints -- guards against a
@@ -140,7 +146,7 @@ def _bend_is_reasonable(curve):
         return True
     t = (ys - ys[0]) / (ys[-1] - ys[0])
     chord_x = xs[0] + t * (xs[-1] - xs[0])
-    return np.abs(xs - chord_x).max() <= _scaled_px(config.MAX_BEND_DEVIATION_PX)
+    return np.abs(xs - chord_x).max() <= _scaled_px(config.MAX_BEND_DEVIATION_PX, width)
 
 
 def _fit_side(xs, ys, min_y, max_y, width):
@@ -151,13 +157,28 @@ def _fit_side(xs, ys, min_y, max_y, width):
     """
     if config.USE_ARC_FIT and len(xs) >= MIN_ARC_POINTS:
         line_poly, quad_poly, bent = _fit_line_and_quad(xs, ys)
-        poly = quad_poly if (bent and quad_poly is not None) else line_poly
+
+        # A quadratic fit through sparse points is only reliable *within*
+        # the y-range those points actually cover -- evaluating it out at
+        # min_y/max_y when the data only spans a narrow band in between is
+        # extrapolation, and a 3-parameter fit extrapolates violently
+        # (observed: points spanning ~100px evaluated ~150px beyond that
+        # range swung all the way to the frame edge). Only trust the bend
+        # when the data's own y-span covers a reasonable fraction of the
+        # full min_y..max_y range it'll be sampled over; otherwise fall
+        # back to the line, which extrapolates safely by comparison.
+        target_span = max(max_y - min_y, 1e-6)
+        data_span = max(ys) - min(ys)
+        span_sufficient = (data_span / target_span) >= config.MIN_ARC_Y_SPAN_FRAC
+
+        poly = quad_poly if (bent and quad_poly is not None and span_sufficient) else line_poly
+        trusted_bend = bent and span_sufficient
         try:
             x_bot = int(np.clip(poly(max_y), 0, width - 1))
             x_top = int(np.clip(poly(min_y), 0, width - 1))
         except Exception:
             return None, None
-        return [x_bot, x_top], (quad_poly if bent else None)
+        return [x_bot, x_top], (quad_poly if trusted_bend else None)
 
     if len(xs) >= 2:
         try:
@@ -209,7 +230,8 @@ def update_fit(left_x, left_y, right_x, right_y, height, width):
     # and repeat the cycle.
     jump_limit = _scaled_px(
         config.ARC_MAX_JUMP_PX if _confirm_ct >= config.ARC_JUMP_CONFIRM_FRAMES
-        else config.ARC_MAX_JUMP_PX_FRESH
+        else config.ARC_MAX_JUMP_PX_FRESH,
+        width,
     )
     if new_left is not None and _left_pts is not None and \
             max(abs(new_left[i] - _left_pts[i]) for i in range(2)) > jump_limit:
@@ -236,8 +258,8 @@ def update_fit(left_x, left_y, right_x, right_y, height, width):
     # narrows to a sliver is just as wrong as one that crosses outright
     # -- real lane lines don't pinch down to near-zero width.
     if (_left_pts is not None and _right_pts is not None and
-            (_right_pts[0] - _left_pts[0] < _scaled_px(config.MIN_LANE_WIDTH_PX) or
-             _right_pts[1] - _left_pts[1] < _scaled_px(config.MIN_LANE_WIDTH_PX))):
+            (_right_pts[0] - _left_pts[0] < _scaled_px(config.MIN_LANE_WIDTH_PX, width) or
+             _right_pts[1] - _left_pts[1] < _scaled_px(config.MIN_LANE_WIDTH_PX, width))):
         _left_pts = _right_pts = None
         got_left = got_right = False
         quad_left = quad_right = None
@@ -280,7 +302,7 @@ def update_fit(left_x, left_y, right_x, right_y, height, width):
         if left_curve is None and quad_left is not None:
             left_curve = _sample_curve(quad_left, max_y, min_y,
                                         _left_pts[0], _left_pts[1], width)
-            if left_curve is not None and not _bend_is_reasonable(left_curve):
+            if left_curve is not None and not _bend_is_reasonable(left_curve, width):
                 left_curve = None
         if left_curve is None:
             left_curve = [(_left_pts[0], max_y), (_left_pts[1], min_y)]
@@ -288,7 +310,7 @@ def update_fit(left_x, left_y, right_x, right_y, height, width):
         if right_curve is None and quad_right is not None:
             right_curve = _sample_curve(quad_right, max_y, min_y,
                                          _right_pts[0], _right_pts[1], width)
-            if right_curve is not None and not _bend_is_reasonable(right_curve):
+            if right_curve is not None and not _bend_is_reasonable(right_curve, width):
                 right_curve = None
         if right_curve is None:
             right_curve = [(_right_pts[0], max_y), (_right_pts[1], min_y)]

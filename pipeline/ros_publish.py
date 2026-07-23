@@ -21,6 +21,7 @@ class WaypointPublisher:
         frame_id=config.ROS_DEFAULT_FRAME_ID,
         image_topic=config.ROS_DEFAULT_IMAGE_TOPIC,
         image_frame_id=config.ROS_DEFAULT_IMAGE_FRAME_ID,
+        debug_image_topic=None,
     ):
         import rclpy
         from nav_msgs.msg import Path
@@ -36,30 +37,47 @@ class WaypointPublisher:
         self._node = Node("lane_waypoint_publisher")
         self._publisher = self._node.create_publisher(Path, topic, 10)
         self._image_publisher = self._node.create_publisher(Image, image_topic, 10)
+        self._debug_image_publisher = (
+            self._node.create_publisher(Image, debug_image_topic, 10)
+            if debug_image_topic
+            else None
+        )
 
-    def publish(self, coords, image_bgr=None):
-        """Publish the overlay image and available ground waypoints.
+    def _publish_bgr_image(self, publisher, image_bgr, frame_id, stamp):
+        from sensor_msgs.msg import Image
+
+        image = Image()
+        image.header.stamp = stamp
+        image.header.frame_id = frame_id
+        image.height, image.width = image_bgr.shape[:2]
+        image.encoding = "bgr8"
+        image.is_bigendian = False
+        image.step = image.width * 3
+        image.data = image_bgr.tobytes()
+        publisher.publish(image)
+
+    def publish(self, coords, image_bgr=None, debug_image=None):
+        """Publish the overlay image, the optional debug-steps image, and
+        available ground waypoints.
 
         Frames with no locked lane (coords has no ground waypoints) are
-        skipped rather than publishing an empty/stale Path. The image is still
-        published so the detector output remains visible.
+        skipped rather than publishing an empty/stale Path. The images are
+        still published so the detector output remains visible.
         """
         from geometry_msgs.msg import PoseStamped
         from nav_msgs.msg import Path
-        from sensor_msgs.msg import Image
 
         stamp = self._node.get_clock().now().to_msg()
 
         if image_bgr is not None:
-            image = Image()
-            image.header.stamp = stamp
-            image.header.frame_id = self._image_frame_id
-            image.height, image.width = image_bgr.shape[:2]
-            image.encoding = "bgr8"
-            image.is_bigendian = False
-            image.step = image.width * 3
-            image.data = image_bgr.tobytes()
-            self._image_publisher.publish(image)
+            self._publish_bgr_image(
+                self._image_publisher, image_bgr, self._image_frame_id, stamp
+            )
+
+        if debug_image is not None and self._debug_image_publisher is not None:
+            self._publish_bgr_image(
+                self._debug_image_publisher, debug_image, self._image_frame_id, stamp
+            )
 
         waypoints = coords.get("center_waypoints_m_approx") if coords else None
         if not waypoints:

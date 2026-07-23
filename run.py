@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "pipeline"))
 
 import cv2
 import numpy as np
-from detect_lanes import detect_lanes, detect_lanes_debug, detect_lanes_with_coords
+from detect_lanes import detect_lanes, detect_lanes_debug, detect_lanes_with_coords, detect_lanes_full
 from waypoints import add_approx_ground_waypoints
 import config
 
@@ -44,13 +44,14 @@ def resolve_video(name):
     raise FileNotFoundError(f"Cannot find '{name}'")
 
 
-def draw_hud(frame, paused, name, idx, total, debug):
+def draw_hud(frame, paused, name, idx, total, debug, source_fps, processing_fps):
     status = "PAUSED" if paused else "PLAYING"
     dbg    = " | DEBUG ON" if debug else ""
     h, w = frame.shape[:2]
     text   = (
         f"{name} | {status} | {idx}/{total} | "
-        f"proc {config.PROCESS_SCALE:g}x | out {w}x{h} | "
+        f"video {source_fps:.1f} FPS | processing {processing_fps:.1f} FPS | "
+        f"scale {config.PROCESS_SCALE:g}x | out {w}x{h} | "
         f"Space: pause  r: restart  d: debug  q: quit{dbg}"
     )
     font, scale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2
@@ -141,7 +142,7 @@ def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
          live_input=False, live_topic=config.ROS_DEFAULT_INPUT_IMAGE_TOPIC,
          camera_height_m=config.APPROX_CAMERA_HEIGHT_M,
          camera_pitch_deg=config.APPROX_CAMERA_PITCH_DEG,
-         ros_publisher=None, ros_every=1):
+         ros_publisher=None, ros_every=1, publish_debug_image=False):
     if live_input:
         from ros_input import RosImageSource
         source = RosImageSource(live_topic)
@@ -189,10 +190,12 @@ def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
     need_coords = print_waypoints or ros_publisher is not None
 
     frame_count = 0
+    fps_window_start = time.perf_counter()
+    fps_window_frames = 0
+    processing_fps = 0.0
     while True:
         if not paused:
             ok, frame = source.read()
-            print(f"Fetching frame {frame_count}", end="\r")
             frame_count += 1
             if not ok:
                 if live_input or headless:
@@ -202,15 +205,26 @@ def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
                 continue
 
             # add gaussian blur to reduce flicker of waypoints between frames
-            frame = cv2.GaussianBlur(frame, (11, 11), 0)
+            frame = cv2.GaussianBlur(frame, (config.GAUSSIAN_BLUR_KERNEL_SIZE, config.GAUSSIAN_BLUR_KERNEL_SIZE), 0)
 
             coords = None
+            debug_image = None
             if live_input:
                 #frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
                 pass
             else:
                 frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-            if need_coords and not debug:
+            if need_coords and not debug and publish_debug_image:
+                last_frame, coords, debug_steps = detect_lanes_full(frame)
+                gray, edges, roi, hough, bird = debug_steps
+                debug_image = _tile_debug_images([
+                    label(bird,   "Step 0 - Bird's-eye perspective"),
+                    label(gray,   "Step 1 — Grayscale (white mask applied)", is_gray=True),
+                    label(edges,  "Step 2 — Canny Edges",  is_gray=True),
+                    label(roi,    "Step 3 — ROI Mask",     is_gray=True),
+                    label(hough,  "Step 4 — Hough  red=left  blue=right  yellow=rejected"),
+                ])
+            elif need_coords and not debug:
                 last_frame, coords = detect_lanes_with_coords(frame)
             elif debug:
                 last_frame, *last_steps = detect_lanes_debug(frame)
@@ -220,6 +234,15 @@ def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
                 _print_scale_info(frame, last_frame)
                 printed_scale = True
             idx += 1
+            fps_window_frames += 1
+            fps_elapsed = time.perf_counter() - fps_window_start
+            if fps_elapsed >= 0.5:
+                processing_fps = fps_window_frames / fps_elapsed
+                fps_window_start = time.perf_counter()
+                fps_window_frames = 0
+            if headless and fps_elapsed >= 0.5:
+                print(f"Processing frame {idx}/{total if total else "live"} | FPS: {processing_fps:.1f}", end="\r")
+
 
             if coords is not None:
                 coords = add_approx_ground_waypoints(
@@ -231,12 +254,12 @@ def play(video_path=None, print_waypoints=False, print_every=1, headless=False,
                     ts_ms = round((idx - 1) / fps * 1000.0, 1)
                     print(f"frame={idx - 1} time_ms={ts_ms} {_format_waypoints(coords)}")
             if ros_publisher is not None and idx % ros_every == 0:
-                ros_publisher.publish(coords, last_frame)
+                ros_publisher.publish(coords, last_frame, debug_image=debug_image)
 
         if not headless and last_frame is not None:
             total_label = total if total else "live"
             display = draw_hud(last_frame.copy(), paused, source_name,
-                               idx, total_label, debug)
+                               idx, total_label, debug, fps, processing_fps)
             cv2.imshow(WIN_MAIN, display)
 
         if not headless and debug and last_steps is not None:
@@ -357,6 +380,13 @@ def main():
                         help=f"frame_id for the overlay image. Default: {config.ROS_DEFAULT_IMAGE_FRAME_ID}")
     parser.add_argument("--ros-every", type=int, default=1,
                         help="Publish every Nth frame when --publish-ros is set")
+    parser.add_argument("--publish-debug-image", action="store_true",
+                        help="Publish the tiled debug-steps image (same view as pressing "
+                             "'d' interactively) as a ROS 2 topic -- for headless setups "
+                             "with no display. Requires --publish-ros.")
+    parser.add_argument("--ros-debug-topic", default=config.ROS_DEFAULT_DEBUG_IMAGE_TOPIC,
+                        help="ROS 2 topic for the debug-steps image. "
+                             f"Default: {config.ROS_DEFAULT_DEBUG_IMAGE_TOPIC}")
     args = parser.parse_args()
     if args.print_every < 1:
         raise ValueError("--print-every must be >= 1")
@@ -371,6 +401,9 @@ def main():
         export_video(video_path, Path(args.export))
         return
 
+    if args.publish_debug_image and not args.publish_ros:
+        parser.error("--publish-debug-image requires --publish-ros")
+
     ros_publisher = None
     if args.publish_ros:
         from ros_publish import WaypointPublisher
@@ -379,6 +412,7 @@ def main():
             frame_id=args.ros_frame_id,
             image_topic=args.ros_image_topic,
             image_frame_id=args.ros_image_frame_id,
+            debug_image_topic=args.ros_debug_topic if args.publish_debug_image else None,
         )
 
     try:
@@ -393,6 +427,7 @@ def main():
             camera_pitch_deg=args.camera_pitch_deg,
             ros_publisher=ros_publisher,
             ros_every=args.ros_every,
+            publish_debug_image=args.publish_debug_image,
         )
     finally:
         if ros_publisher is not None:

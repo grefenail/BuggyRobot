@@ -20,10 +20,11 @@ import cv2
 from scanline_lane_experiment import analyze_frame, resolve_video
 
 
-def draw_hud(frame, paused, name, idx, total):
+def draw_hud(frame, paused, name, idx, total, source_fps, processing_fps):
     status = "PAUSED" if paused else "PLAYING"
     h, w = frame.shape[:2]
-    text = f"{name} | {status} | {idx}/{total} | out {w}x{h} | Space pause  r restart  q quit"
+    text = (f"{name} | {status} | {idx}/{total} | video {source_fps:.1f} FPS | "
+            f"processing {processing_fps:.1f} FPS | out {w}x{h} | Space pause  r restart  q quit")
     font, scale, thick = cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2
     (tw, th), bl = cv2.getTextSize(text, font, scale, thick)
     cv2.rectangle(frame, (0, 0), (min(tw + 18, w), th + bl + 18), (0, 0, 0), -1)
@@ -31,7 +32,7 @@ def draw_hud(frame, paused, name, idx, total):
     return frame
 
 
-def play(video_path):
+def play(video_path, headless=False):
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open: {video_path}")
@@ -43,9 +44,13 @@ def play(video_path):
     paused = False
     idx = 0
     last_frame = None
+    fps_window_start = time.perf_counter()
+    fps_window_frames = 0
+    processing_fps = 0.0
 
     win = "Scanline Lane Experiment"
-    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+    if not headless:
+        cv2.namedWindow(win, cv2.WINDOW_NORMAL)
 
     print(f"\nPlaying scanline experiment: {video_path.name}")
     print(f"  {total} frames @ {fps:.1f} fps")
@@ -55,15 +60,28 @@ def play(video_path):
         if not paused:
             ok, frame = cap.read()
             if not ok:
+                if headless:
+                    break
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 idx = 0
                 continue
             frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
             last_frame = analyze_frame(frame)
             idx += 1
+            fps_window_frames += 1
+            fps_elapsed = time.perf_counter() - fps_window_start
+            if fps_elapsed >= 0.5:
+                processing_fps = fps_window_frames / fps_elapsed
+                fps_window_start = time.perf_counter()
+                fps_window_frames = 0
+                if headless:
+                    print(f"Processing frame {idx}/{total} | FPS: {processing_fps:.1f}", end="\r")
 
-        if last_frame is not None:
-            cv2.imshow(win, draw_hud(last_frame.copy(), paused, video_path.name, idx, total))
+        if last_frame is not None and not headless:
+            cv2.imshow(win, draw_hud(last_frame.copy(), paused, video_path.name, idx, total, fps, processing_fps))
+
+        if headless:
+            continue
 
         key = cv2.waitKey(delay if not paused else 50) & 0xFF
         if key in (ord("q"), 27):
@@ -77,7 +95,8 @@ def play(video_path):
             paused = False
 
     cap.release()
-    cv2.destroyAllWindows()
+    if not headless:
+        cv2.destroyAllWindows()
 
 
 def export_video(video_path, output_path):
@@ -119,13 +138,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("video", nargs="?")
     parser.add_argument("--export", metavar="OUTPUT", help="Export full scanline output video")
+    parser.add_argument("--headless", action="store_true", help="Process without opening a display window")
     args = parser.parse_args()
 
     video_path = resolve_video(args.video)
     if args.export:
         export_video(video_path, Path(args.export))
     else:
-        play(video_path)
+        play(video_path, headless=args.headless)
 
 
 if __name__ == "__main__":

@@ -43,6 +43,17 @@ def build_birdseye_vertices(height, width):
 
 
 def apply_birdseye_roi(edges, height, width):
+    if config.DISABLE_ROI_CROP:
+        # Full-frame rectangle -- no masking at all, just used so the debug
+        # overlay (cv2.polylines on `vertices`) still draws something
+        # meaningful instead of a stale trapezoid.
+        full_vertices = np.array([[
+            (0, height - 1),
+            (0, 0),
+            (width - 1, 0),
+            (width - 1, height - 1),
+        ]], dtype=np.int32)
+        return edges, full_vertices
     vertices = build_birdseye_vertices(height, width)
     mask     = np.zeros_like(edges)
     cv2.fillPoly(mask, vertices, 255)
